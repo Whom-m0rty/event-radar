@@ -582,7 +582,13 @@ def pipeline(
     skip_calendar: bool = typer.Option(False, help="Fetch+score only, no Google calls."),
 ) -> None:
     """Full cron pipeline: fetch -> score -> push-calendar -> sync-feedback."""
-    from event_radar.pipeline import calendar_step, fetch_step, genre_step, score_step
+    from event_radar.pipeline import (
+        backfill_snapshots,
+        calendar_step,
+        fetch_step,
+        genre_step,
+        score_step,
+    )
 
     config = load_config()
     connection = db.connect(config.db_path)
@@ -593,6 +599,8 @@ def pipeline(
     typer.echo(f"genres: {enriched} new artist tags")
     scored = score_step(config.raw, connection)
     typer.echo(f"score: {scored} events")
+    backfilled = backfill_snapshots(config.raw, connection)
+    typer.echo(f"snapshots backfilled: {backfilled}")
 
     if skip_calendar:
         connection.close()

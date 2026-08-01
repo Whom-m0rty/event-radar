@@ -35,3 +35,8 @@ exports/
 *.db-shm
 .turso_replica.db-info
 *.db-info
+
+# node / worker
+node_modules/
+worker/.wrangler/
+worker/package-lock.json

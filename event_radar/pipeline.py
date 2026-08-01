@@ -96,6 +96,32 @@ def score_step(config, connection) -> int:
     return connection.execute("SELECT COUNT(*) FROM scores").fetchone()[0]
 
 
+def backfill_snapshots(config, connection) -> int:
+    """Give a feature snapshot to any feedback the bot wrote (it stores none).
+
+    The Cloudflare Worker records feedback without a snapshot (no scoring logic in
+    TS). Here we attach one using the current profile — a close-enough stand-in
+    for the moment of decision, and enough to keep the label trainable later.
+    """
+    from event_radar.feedback.snapshots import create_snapshot
+
+    affinity = _affinity(connection)
+    scoring_cfg = config.get("scoring", {})
+    pending = connection.execute(
+        "SELECT id, event_id FROM feedback_events WHERE snapshot_id IS NULL"
+    ).fetchall()
+    count = 0
+    for row in pending:
+        event = connection.execute("SELECT * FROM events WHERE id = ?", (row["event_id"],)).fetchone()
+        if event is None:
+            continue
+        snapshot_id = create_snapshot(connection, dict(event), affinity, scoring_cfg)
+        connection.execute("UPDATE feedback_events SET snapshot_id = ? WHERE id = ?", (snapshot_id, row["id"]))
+        count += 1
+    connection.commit()
+    return count
+
+
 def calendar_step(config, connection, gcal, bot_username: str | None) -> tuple[int, int]:
     """Push above-threshold events and sync colour feedback. May raise on auth failure."""
     scoring_cfg = config.get("scoring", {})
