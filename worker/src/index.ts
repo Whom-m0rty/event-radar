@@ -46,33 +46,57 @@ function intentKeyboard(eventId: string) {
   };
 }
 
-function line(row: any): string {
-  const price = row.is_free ? "free" : "€?";
+// Rich, calendar-like text (plain — no Markdown, so odd titles never break it).
+function fmtEvent(row: any): string {
   const when = String(row.starts_at ?? "").slice(0, 16).replace("T", " ");
-  return `*[${Math.round(Number(row.score))}]* ${row.title}\n${when} · ${row.venue_name} · ${price}`;
+  const price = row.is_free ? "free" : (row.price_min != null ? `€${Math.round(Number(row.price_min))}` : "€?");
+  let lineup = "";
+  try {
+    const artists = JSON.parse(row.lineup_raw || "[]");
+    if (artists.length) lineup = "\n🎧 " + artists.slice(0, 5).join(", ");
+  } catch { /* ignore */ }
+  let factors = "";
+  try {
+    const breakdown = JSON.parse(row.breakdown || "{}") as Record<string, number>;
+    const top = Object.entries(breakdown)
+      .sort((a, b) => Math.abs(Number(b[1])) - Math.abs(Number(a[1])))
+      .slice(0, 3)
+      .map(([k, v]) => `${k} ${Number(v) >= 0 ? "+" : ""}${v}`);
+    if (top.length) factors = "\n⭐ " + top.join(", ");
+  } catch { /* ignore */ }
+  const link = row.url ? `\n🔗 ${row.url}` : "";
+  return `[${Math.round(Number(row.score))}] ${row.title}\n📅 ${when} · ${row.venue_name} · ${price}${lineup}${factors}${link}`;
 }
 
-async function sendDigest(env: Env, client: Client, chatId: number | string, where = ""): Promise<void> {
+async function sendDigest(env: Env, client: Client, chatId: number | string, extraWhere = ""): Promise<void> {
   const threshold = Number(env.PUSH_THRESHOLD ?? "35");
   const size = Number(env.DIGEST_SIZE ?? "10");
+  const days = Number(env.DIGEST_DAYS ?? "7");
+
+  // Next `days` window, sorted chronologically ("what's coming up").
+  const now = new Date();
+  const lo = now.toISOString().slice(0, 19);
+  const hi = new Date(now.getTime() + days * 86400000).toISOString().slice(0, 19);
+
   const sql =
-    `SELECT e.id, e.title, e.venue_name, e.starts_at, e.is_free, s.score ` +
-    `FROM events e JOIN scores s ON s.event_id = e.id ` +
-    `WHERE s.score >= ? ${where} ORDER BY s.score DESC LIMIT ?`;
-  const rs = await client.execute({ sql, args: [threshold, size] });
+    `SELECT e.id, e.title, e.venue_name, e.starts_at, e.is_free, e.price_min, e.url, e.lineup_raw, ` +
+    `s.score, s.breakdown FROM events e JOIN scores s ON s.event_id = e.id ` +
+    `WHERE s.score >= ? AND e.starts_at >= ? AND e.starts_at <= ? ${extraWhere} ` +
+    `ORDER BY e.starts_at ASC LIMIT ?`;
+  const rs = await client.execute({ sql, args: [threshold, lo, hi, size] });
   if (rs.rows.length === 0) {
-    await tg(env, "sendMessage", { chat_id: chatId, text: "Пока нечего показать." });
+    await tg(env, "sendMessage", { chat_id: chatId, text: `Ближайшие ${days} дней — ничего выше порога.` });
     return;
   }
-  const now = new Date().toISOString();
+  const nowIso = now.toISOString();
   for (const row of rs.rows as any[]) {
     await tg(env, "sendMessage", {
-      chat_id: chatId, text: line(row), parse_mode: "Markdown",
+      chat_id: chatId, text: fmtEvent(row),
       reply_markup: intentKeyboard(String(row.id)),
     });
     await client.execute({
       sql: `INSERT INTO impressions (event_id,user_id,surface,score_at_show,shown_at) VALUES (?,?,?,?,?)`,
-      args: [row.id, "owner", "tg_digest", row.score, now],
+      args: [row.id, "owner", "tg_digest", row.score, nowIso],
     });
   }
 }

@@ -13,3 +13,4 @@ crons = ["0 8 * * *"]
 [vars]
 PUSH_THRESHOLD = "35"
 DIGEST_SIZE = "10"
+DIGEST_DAYS = "7"
