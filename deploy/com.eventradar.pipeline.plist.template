@@ -1,0 +1,39 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- launchd agent for the twice-daily pipeline (macOS). Fill the placeholders,
+     save as ~/Library/LaunchAgents/com.eventradar.pipeline.plist (chmod 600),
+     then: launchctl load -w ~/Library/LaunchAgents/com.eventradar.pipeline.plist
+     State lives in Turso, so this shares data with the Cloudflare Worker bot. -->
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>com.eventradar.pipeline</string>
+    <key>ProgramArguments</key>
+    <array>
+        <string>/Users/YOU/.local/bin/uv</string>
+        <string>run</string>
+        <string>event-radar</string>
+        <string>pipeline</string>
+    </array>
+    <key>WorkingDirectory</key>
+    <string>/Users/YOU/PycharmProjects/event-radar</string>
+    <key>EnvironmentVariables</key>
+    <dict>
+        <key>PATH</key>
+        <string>/Users/YOU/.local/bin:/opt/homebrew/bin:/usr/bin:/bin:/usr/sbin:/sbin</string>
+        <key>TURSO_DATABASE_URL</key><string>libsql://YOUR-DB.turso.io</string>
+        <key>TURSO_AUTH_TOKEN</key><string>YOUR_TURSO_TOKEN</string>
+        <key>RA_CONTACT</key><string>you@example.com</string>
+        <key>LASTFM_API_KEY</key><string>YOUR_LASTFM_KEY</string>
+        <key>TELEGRAM_BOT_TOKEN</key><string>YOUR_BOT_TOKEN</string>
+        <key>TELEGRAM_BOT_USERNAME</key><string>YourBot</string>
+    </dict>
+    <key>StartCalendarInterval</key>
+    <array>
+        <dict><key>Hour</key><integer>9</integer><key>Minute</key><integer>0</integer></dict>
+        <dict><key>Hour</key><integer>20</integer><key>Minute</key><integer>0</integer></dict>
+    </array>
+    <key>StandardOutPath</key><string>/tmp/event-radar-pipeline.out.log</string>
+    <key>StandardErrorPath</key><string>/tmp/event-radar-pipeline.err.log</string>
+</dict>
+</plist>

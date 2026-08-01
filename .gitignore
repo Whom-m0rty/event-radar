@@ -26,3 +26,12 @@ exports/
 *.jsonl
 
 .DS_Store
+
+# libSQL / Turso embedded replica artifacts
+.turso_replica.db
+.turso_replica.db-wal
+.turso_replica.db-shm
+*.db-wal
+*.db-shm
+.turso_replica.db-info
+*.db-info

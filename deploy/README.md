@@ -1,4 +1,42 @@
-# Deploy on Oracle Cloud Always Free (24/7, free forever)
+# Deploy
+
+State lives in **Turso** (hosted libSQL), so the pipeline and the bot can run in
+different places and share one DB. Two runtimes:
+
+- **Pipeline** (fetch→score→push→sync, twice daily) — runs wherever; simplest is
+  **launchd on a Mac** (below). Set `TURSO_DATABASE_URL` + `TURSO_AUTH_TOKEN` and
+  it reads/writes the cloud DB.
+- **Bot** (24/7 webhook) — Cloudflare Worker (see the worker/ setup, phase 3).
+
+The Google OAuth token is stored **in Turso** (`app_state.google_token`), so a
+stateless runner refreshes it without a local file. Do the first browser consent
+once locally (`event-radar spotify-login` for Spotify / `push-calendar` for
+Google), which seeds the token into Turso.
+
+## Pipeline via launchd (macOS)
+
+```bash
+cp deploy/com.eventradar.pipeline.plist.template ~/Library/LaunchAgents/com.eventradar.pipeline.plist
+# edit it: your uv path, project path, and the env values
+chmod 600 ~/Library/LaunchAgents/com.eventradar.pipeline.plist
+launchctl load -w ~/Library/LaunchAgents/com.eventradar.pipeline.plist
+launchctl start com.eventradar.pipeline           # run once now
+tail -f /tmp/event-radar-pipeline.out.log
+```
+
+Runs at 09:00 and 20:00 (only while the Mac is awake). To stop:
+`launchctl unload ~/Library/LaunchAgents/com.eventradar.pipeline.plist`.
+
+## Pipeline via GitHub Actions (alternative)
+
+`.github/workflows/pipeline.yml` runs the same pipeline on a cron. Set the repo
+secrets (TURSO_*, RA_CONTACT, LASTFM_API_KEY, TELEGRAM_*, GOOGLE_CREDENTIALS_JSON)
+and uncomment the `schedule:` trigger. Needs a GitHub account in good standing
+(Actions is free for public repos).
+
+---
+
+# Appendix: Oracle Cloud Always Free (24/7 VM, alternative to launchd)
 
 Runs the **pipeline** (fetch→score→push→sync, twice daily via a systemd timer)
 and the **bot** (long-polling, systemd service). SQLite lives on the VM disk.
