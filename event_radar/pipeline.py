@@ -26,6 +26,40 @@ def _affinity(connection) -> dict[str, float]:
     return affinity
 
 
+def _genre_ctx(connection) -> dict:
+    from event_radar.profile.genres import load_artist_tags, load_genre_profile
+
+    return {"artist_tags": load_artist_tags(connection), "profile": load_genre_profile(connection)}
+
+
+def genre_step(config, connection, api_key: str | None) -> int:
+    """Best-effort: refresh the genre profile + enrich new lineup artists. Never fatal."""
+    if not api_key:
+        return 0
+    try:
+        from event_radar.profile.genres import build_genre_profile, enrich_artist_tags, save_genre_profile
+        from event_radar.profile.lastfm import LastFm
+        from event_radar.profile.normalize import normalize_lineup
+
+        genre_cfg = config.get("profile", {}).get("genre", {})
+        lastfm = LastFm(api_key=api_key, cache_path="lastfm_cache")
+        seed = _affinity(connection)
+        profile = build_genre_profile(
+            seed, lastfm,
+            expand_above=genre_cfg.get("expand_above", 0.5),
+            top_n=genre_cfg.get("top_tags", 8),
+        )
+        save_genre_profile(connection, profile)
+        artists = set(seed.keys())
+        for row in connection.execute("SELECT lineup_raw FROM events WHERE lineup_raw IS NOT NULL"):
+            for name in normalize_lineup(json.loads(row["lineup_raw"])):
+                artists.add(name)
+        return enrich_artist_tags(connection, lastfm, list(artists), top_n=genre_cfg.get("top_tags", 8))
+    except Exception as error:  # noqa: BLE001 — genres are a nice-to-have, not fatal
+        logger.warning("genre_step skipped: %s", error)
+        return 0
+
+
 def fetch_step(config, connection, contact: str, window_days: int | None = None) -> tuple[int, int]:
     source_cfg = config.get("source", {})
     ra = ResidentAdvisor(
@@ -48,10 +82,11 @@ def fetch_step(config, connection, contact: str, window_days: int | None = None)
 def score_step(config, connection) -> int:
     scoring_cfg = config.get("scoring", {})
     affinity = _affinity(connection)
+    genre_ctx = _genre_ctx(connection)
     now = datetime.now(timezone.utc).isoformat()
     connection.execute("DELETE FROM scores")
     for event in connection.execute("SELECT * FROM events").fetchall():
-        features = build_features(dict(event), affinity)
+        features = build_features(dict(event), affinity, genre_ctx)
         value, breakdown = score_event(features, scoring_cfg)
         connection.execute(
             "INSERT INTO scores (event_id, score, breakdown, computed_at) VALUES (?,?,?,?)",
@@ -66,6 +101,7 @@ def calendar_step(config, connection, gcal, bot_username: str | None) -> tuple[i
     scoring_cfg = config.get("scoring", {})
     threshold = scoring_cfg.get("push_threshold", 35)
     affinity = _affinity(connection)
+    genre_ctx = _genre_ctx(connection)
 
     affinity_meta = {}
     for row in connection.execute("SELECT artist_name_normalized, source, origin FROM affinity"):
@@ -76,7 +112,7 @@ def calendar_step(config, connection, gcal, bot_username: str | None) -> tuple[i
     pushed = 0
     for event in connection.execute("SELECT * FROM events").fetchall():
         event_dict = dict(event)
-        features = build_features(event_dict, affinity)
+        features = build_features(event_dict, affinity, genre_ctx)
         value, breakdown = score_event(features, scoring_cfg)
         if value < threshold:
             continue

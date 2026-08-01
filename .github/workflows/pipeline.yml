@@ -1,0 +1,45 @@
+name: pipeline
+
+# Serverless cron: fetch -> score -> push-calendar -> sync-feedback against Turso.
+# The Google OAuth token lives in Turso (stateless runner can't keep token.json),
+# so only the static credentials.json is passed in as a secret.
+
+on:
+  schedule:
+    # 07:00 and 18:00 UTC ≈ 09:00 and 20:00 Europe/Rome (summer time).
+    - cron: "0 7,18 * * *"
+  workflow_dispatch: {}
+
+concurrency:
+  group: pipeline
+  cancel-in-progress: false
+
+jobs:
+  run:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+
+      - name: Sync deps
+        run: uv sync --frozen
+
+      - name: Run pipeline
+        env:
+          TURSO_DATABASE_URL: ${{ secrets.TURSO_DATABASE_URL }}
+          TURSO_AUTH_TOKEN: ${{ secrets.TURSO_AUTH_TOKEN }}
+          RA_CONTACT: ${{ secrets.RA_CONTACT }}
+          LASTFM_API_KEY: ${{ secrets.LASTFM_API_KEY }}
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+          TELEGRAM_BOT_USERNAME: ${{ secrets.TELEGRAM_BOT_USERNAME }}
+          # Static OAuth client (installed app). The refreshable token is in Turso.
+          GOOGLE_CREDENTIALS_JSON: ${{ secrets.GOOGLE_CREDENTIALS_JSON }}
+        run: |
+          printf '%s' "$GOOGLE_CREDENTIALS_JSON" > credentials.json
+          uv run event-radar pipeline

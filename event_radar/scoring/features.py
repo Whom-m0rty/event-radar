@@ -36,8 +36,14 @@ def _weekday(starts_at: str | None) -> int | None:
         return None
 
 
-def build_features(event: dict, affinity: dict[str, float]) -> dict:
-    """Return the raw feature dict for an event given the taste map (name->weight)."""
+def build_features(event: dict, affinity: dict[str, float], genre_ctx: dict | None = None) -> dict:
+    """Return the raw feature dict for an event.
+
+    `genre_ctx` (optional) = {"artist_tags": {name: {tag: w}}, "profile": {tag: w}}
+    enables genre-overlap features. Passed in (not fetched) so this stays pure.
+    """
+    from event_radar.profile.genres import artist_genre_affinity
+
     lineup_raw = event.get("lineup_raw")
     raw_names = json.loads(lineup_raw) if lineup_raw else []
     lineup = normalize_lineup(raw_names)
@@ -51,11 +57,25 @@ def build_features(event: dict, affinity: dict[str, float]) -> dict:
     music_max = max(music_weights) if music_weights else 0.0
     music_mean = (sum(music_weights) / len(music_weights)) if music_weights else 0.0
 
+    genre_max = 0.0
+    genre_mean = 0.0
+    if genre_ctx:
+        artist_tags = genre_ctx.get("artist_tags", {})
+        profile = genre_ctx.get("profile", {})
+        per_artist = []
+        for name in lineup:
+            per_artist.append(artist_genre_affinity(artist_tags.get(name, {}), profile))
+        if per_artist:
+            genre_max = max(per_artist)
+            genre_mean = sum(per_artist) / len(per_artist)
+
     return {
         "lineup_size": len(lineup),
         "matched_artists": matched,        # normalized name -> weight
         "music_max": music_max,
         "music_mean": music_mean,
+        "genre_max": genre_max,
+        "genre_mean": genre_mean,
         "is_free": _as_bool(event.get("is_free")),
         "is_open_air": _as_bool(event.get("is_open_air")),
         "price_min": event.get("price_min"),

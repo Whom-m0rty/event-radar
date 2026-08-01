@@ -27,6 +27,32 @@ class LastFm:
             expire_after=cache_expire_hours * 3600,
         )
 
+    def top_tags(self, artist_name: str) -> list[tuple[str, float]]:
+        """Return [(tag, weight 0..1)] for an artist (genre-ish tags), or []."""
+        params = {
+            "method": "artist.gettoptags",
+            "artist": artist_name,
+            "api_key": self.api_key,
+            "format": "json",
+            "autocorrect": 1,
+        }
+        try:
+            response = self.session.get(_ENDPOINT, params=params, timeout=30)
+            response.raise_for_status()
+            payload = response.json()
+        except (requests.RequestException, ValueError) as error:
+            logger.warning("Last.fm getTopTags failed for %r: %s", artist_name, error)
+            return []
+        if "error" in payload:
+            return []
+        results: list[tuple[str, float]] = []
+        for entry in payload.get("toptags", {}).get("tag", []):
+            name = entry.get("name")
+            count = entry.get("count")
+            if name and count is not None:
+                results.append((name.strip().lower(), float(count) / 100.0))
+        return results
+
     def similar(self, artist_name: str) -> list[tuple[str, float]]:
         """Return [(similar_artist_name, match_score)] for an artist, or []."""
         params = {

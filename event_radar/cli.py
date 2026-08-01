@@ -324,6 +324,63 @@ def _load_affinity(connection) -> dict:
     return affinity
 
 
+def _genre_ctx(connection) -> dict:
+    from event_radar.profile.genres import load_artist_tags, load_genre_profile
+
+    return {"artist_tags": load_artist_tags(connection), "profile": load_genre_profile(connection)}
+
+
+@app.command()
+def genres() -> None:
+    """Build a taste-genre profile (Last.fm tags) and tag event lineups for matching."""
+    import json as _json
+
+    from event_radar.profile.genres import (
+        build_genre_profile,
+        enrich_artist_tags,
+        load_artist_tags,
+        load_genre_profile,
+        save_genre_profile,
+    )
+    from event_radar.profile.lastfm import LastFm
+    from event_radar.profile.normalize import normalize_lineup
+
+    config = load_config()
+    profile_cfg = config.section("profile")
+    genre_cfg = profile_cfg.get("genre", {})
+    connection = db.connect(config.db_path)
+    lastfm = LastFm(
+        api_key=config.require_env("LASTFM_API_KEY"),
+        cache_path=str(config.project_root / "lastfm_cache"),
+    )
+
+    seed = _load_affinity(connection)
+    typer.echo(f"Building genre profile from {len(seed)} seed artists...")
+    profile = build_genre_profile(
+        seed, lastfm,
+        expand_above=genre_cfg.get("expand_above", 0.5),
+        top_n=genre_cfg.get("top_tags", 8),
+    )
+    save_genre_profile(connection, profile)
+
+    def _weight_of(pair):
+        return pair[1]
+
+    top = sorted(profile.items(), key=_weight_of, reverse=True)[:10]
+    typer.echo("Taste genres: " + ", ".join(f"{tag} {w:.2f}" for tag, w in top))
+
+    # Enrich every artist that appears in an event lineup (+ the seed).
+    lineup_artists = set()
+    for row in connection.execute("SELECT lineup_raw FROM events WHERE lineup_raw IS NOT NULL"):
+        for name in normalize_lineup(_json.loads(row["lineup_raw"])):
+            lineup_artists.add(name)
+    to_enrich = list(lineup_artists | set(seed.keys()))
+    typer.echo(f"Enriching genre tags for {len(to_enrich)} artists (cached)...")
+    fetched = enrich_artist_tags(connection, lastfm, to_enrich, top_n=genre_cfg.get("top_tags", 8))
+    typer.secho(f"Fetched {fetched} new, {len(load_artist_tags(connection))} cached total.", fg=typer.colors.GREEN)
+    connection.close()
+
+
 @app.command()
 def score(top: int = typer.Option(15, help="How many scored events to print.")) -> None:
     """Score fetched events with the config formula (music as a booster)."""
@@ -337,6 +394,7 @@ def score(top: int = typer.Option(15, help="How many scored events to print.")) 
     scoring_cfg = config.section("scoring")
     connection = db.connect(config.db_path)
     affinity = _load_affinity(connection)
+    genre_ctx = _genre_ctx(connection)
 
     events = connection.execute("SELECT * FROM events").fetchall()
     now = datetime.now(timezone.utc).isoformat()
@@ -344,7 +402,7 @@ def score(top: int = typer.Option(15, help="How many scored events to print.")) 
 
     scored = []
     for event in events:
-        features = build_features(dict(event), affinity)
+        features = build_features(dict(event), affinity, genre_ctx)
         value, breakdown = score_event(features, scoring_cfg)
         connection.execute(
             "INSERT INTO scores (event_id, score, breakdown, computed_at) VALUES (?,?,?,?)",
@@ -382,11 +440,12 @@ def _scored_above_threshold(connection, scoring_cfg):
     from event_radar.scoring.score import score_event
 
     affinity = _load_affinity(connection)
+    genre_ctx = _genre_ctx(connection)
     threshold = scoring_cfg.get("push_threshold", 35)
     result = []
     for event in connection.execute("SELECT * FROM events").fetchall():
         event_dict = dict(event)
-        features = build_features(event_dict, affinity)
+        features = build_features(event_dict, affinity, genre_ctx)
         value, breakdown = score_event(features, scoring_cfg)
         if value >= threshold:
             result.append((event_dict, value, breakdown, features))
@@ -523,13 +582,15 @@ def pipeline(
     skip_calendar: bool = typer.Option(False, help="Fetch+score only, no Google calls."),
 ) -> None:
     """Full cron pipeline: fetch -> score -> push-calendar -> sync-feedback."""
-    from event_radar.pipeline import calendar_step, fetch_step, score_step
+    from event_radar.pipeline import calendar_step, fetch_step, genre_step, score_step
 
     config = load_config()
     connection = db.connect(config.db_path)
 
     inserted, updated = fetch_step(config.raw, connection, config.require_env("RA_CONTACT"), window_days)
     typer.echo(f"fetch: {inserted} new, {updated} updated")
+    enriched = genre_step(config.raw, connection, config.env("LASTFM_API_KEY"))
+    typer.echo(f"genres: {enriched} new artist tags")
     scored = score_step(config.raw, connection)
     typer.echo(f"score: {scored} events")
 

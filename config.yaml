@@ -25,7 +25,8 @@ scoring:
   # An event earns a base from practical factors; a music match adds on top.
   weights:
     base: 18                  # every event starts here so the calendar isn't empty
-    music: 40                 # booster: music_component in [0,1] scaled by this
+    music: 40                 # booster: exact-artist match (rare vs RA-Milan)
+    genre: 30                 # booster: genre-tag overlap (bridges taste<->scene)
     bonus_free: 15
     bonus_openair: 12
     bonus_cheap: 8
@@ -35,6 +36,9 @@ scoring:
   music:
     # music_component = max_weight * max(lineup) + mean_weight * mean(lineup)
     # max dominates: one strong headliner beats an even mid lineup.
+    max_weight: 0.7
+    mean_weight: 0.3
+  genre:                      # same shape, applied to genre-tag overlap
     max_weight: 0.7
     mean_weight: 0.3
   price:
@@ -70,6 +74,9 @@ profile:
     base_weight: 0.6          # weight for an artist liked once
     step_per_extra_like: 0.1  # +this per additional liked track
     max_weight: 1.0
+  genre:                      # genre-tag matching (bridges taste<->local scene)
+    top_tags: 8               # tags kept per artist
+    expand_above: 0.5         # only seed artists above this shape the genre profile
 
 calendar:
   name: "Event Radar — Milano"

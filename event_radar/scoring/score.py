@@ -29,6 +29,15 @@ def score_event(features: dict, config: dict) -> tuple[float, dict]:
     if music_component > 0:
         breakdown["music"] = round(weights["music"] * music_component, 2)
 
+    # Genre booster: bridges taste <-> local scene when exact names don't match.
+    genre_cfg = config.get("genre", {"max_weight": 0.7, "mean_weight": 0.3})
+    genre_component = (
+        genre_cfg["max_weight"] * features.get("genre_max", 0.0)
+        + genre_cfg["mean_weight"] * features.get("genre_mean", 0.0)
+    )
+    if genre_component > 0 and weights.get("genre"):
+        breakdown["genre"] = round(weights["genre"] * genre_component, 2)
+
     # Price: free wins outright; otherwise cheap-bonus OR over-threshold penalty.
     # These branches are mutually exclusive so a free event never also gets cheap.
     if features["is_free"]:
