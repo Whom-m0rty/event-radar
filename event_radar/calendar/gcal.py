@@ -13,7 +13,9 @@ score, dry-run) works without them installed.
 """
 from __future__ import annotations
 
+import json
 import logging
+import os
 import sqlite3
 from datetime import datetime, timezone
 
@@ -50,21 +52,31 @@ class GoogleCalendar:
     def _authorize(self):
         from google.auth.transport.requests import Request
         from google.oauth2.credentials import Credentials
-        from google_auth_oauthlib.flow import InstalledAppFlow
-        import os
 
+        # Prefer the token stored in the DB (Turso) so a stateless runner can
+        # refresh it; fall back to the local token.json for first-time auth.
         creds = None
-        if os.path.exists(self.token_file):
+        stored = _get_state(self.connection, "google_token")
+        if stored:
+            creds = Credentials.from_authorized_user_info(json.loads(stored), SCOPES)
+        elif os.path.exists(self.token_file):
             creds = Credentials.from_authorized_user_file(self.token_file, SCOPES)
+
         if not creds or not creds.valid:
             if creds and creds.expired and creds.refresh_token:
-                creds.refresh(Request())
+                creds.refresh(Request())  # token JSON carries client id/secret
             else:
+                from google_auth_oauthlib.flow import InstalledAppFlow
+
                 flow = InstalledAppFlow.from_client_secrets_file(self.credentials_file, SCOPES)
-                # Opens the browser once; catches the redirect on a local port.
-                creds = flow.run_local_server(port=0)
-            with open(self.token_file, "w", encoding="utf-8") as handle:
-                handle.write(creds.to_json())
+                creds = flow.run_local_server(port=0)  # browser once, local redirect
+            # Persist to the DB (for serverless) and, best-effort, the local file.
+            _set_state(self.connection, "google_token", creds.to_json())
+            try:
+                with open(self.token_file, "w", encoding="utf-8") as handle:
+                    handle.write(creds.to_json())
+            except OSError:
+                pass
         return creds
 
     def service(self):
