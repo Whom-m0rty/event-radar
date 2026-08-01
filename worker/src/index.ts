@@ -167,6 +167,13 @@ export default {
       return new Response(JSON.stringify({ hookUrl, telegram: result }, null, 2));
     }
 
+    // Manually fire the scheduled digest to TELEGRAM_CHAT_ID (test the auto path).
+    if (request.method === "GET" && url.pathname === `/digest-now/${env.WEBHOOK_SECRET}`) {
+      if (!env.TELEGRAM_CHAT_ID) return new Response("no TELEGRAM_CHAT_ID set");
+      await sendDigest(env, db(env), env.TELEGRAM_CHAT_ID);
+      return new Response(`digest sent to ${env.TELEGRAM_CHAT_ID}`);
+    }
+
     if (request.method !== "POST" || url.pathname !== `/tg/${env.WEBHOOK_SECRET}`) {
       return new Response("event-radar-bot ok");
     }
