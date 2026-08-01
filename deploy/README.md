@@ -16,7 +16,7 @@ sudo apt update && sudo apt install -y git
 # uv for the eventradar user
 sudo -u eventradar bash -lc 'curl -LsSf https://astral.sh/uv/install.sh | sh'
 # code
-sudo -u eventradar git clone <your-repo-url> /opt/event-radar
+sudo -u eventradar git clone https://github.com/Whom-m0rty/event-radar.git /opt/event-radar
 sudo -u eventradar bash -lc 'cd /opt/event-radar && uv sync'
 # system clock -> Rome (the timer + scoring assume it)
 sudo timedatectl set-timezone Europe/Rome
