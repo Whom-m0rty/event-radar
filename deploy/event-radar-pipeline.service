@@ -1,0 +1,11 @@
+[Unit]
+Description=Event Radar pipeline (fetch -> score -> push-calendar -> sync-feedback)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+User=eventradar
+WorkingDirectory=/opt/event-radar
+EnvironmentFile=/etc/event-radar/env
+ExecStart=/home/eventradar/.local/bin/uv run event-radar pipeline

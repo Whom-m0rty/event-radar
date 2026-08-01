@@ -1,0 +1,10 @@
+[Unit]
+Description=Run the Event Radar pipeline twice a day
+
+[Timer]
+# System clock should be Europe/Rome (see deploy/README.md). 09:00 and 20:00.
+OnCalendar=*-*-* 09,20:00:00
+Persistent=true
+
+[Install]
+WantedBy=timers.target

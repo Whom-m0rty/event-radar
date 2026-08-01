@@ -1,0 +1,86 @@
+# Event Radar configuration.
+# Secrets live in .env — here we keep only non-secret knobs.
+# Every scoring weight and threshold is here on purpose: the score must be
+# hand-tunable without touching code (spec section 5).
+
+database: event_radar.db
+
+source:
+  city: milan
+  # RA area id for Milan, resolved live via the areas(searchTerm) query.
+  # Kept here as a cache so a normal run needs no lookup request.
+  area_id: 347
+  area_search_term: milan
+  window_days: 60
+  # Politeness: honest UA with a contact, >=2s between requests, disk cache.
+  request_delay_seconds: 2.0
+  cache_expire_hours: 6
+  # {contact} is filled from RA_CONTACT in .env.
+  user_agent: "EventRadar/0.1 (+mailto:{contact})"
+  max_retries: 4
+
+scoring:
+  push_threshold: 35          # only events with score >= this go to the calendar
+  # Music is a BOOSTER, not a gate (taste rarely overlaps RA-Milan — measured).
+  # An event earns a base from practical factors; a music match adds on top.
+  weights:
+    base: 18                  # every event starts here so the calendar isn't empty
+    music: 40                 # booster: music_component in [0,1] scaled by this
+    bonus_free: 15
+    bonus_openair: 12
+    bonus_cheap: 8
+    penalty_price: 0.4        # subtracted per euro above penalty_above_eur
+    bonus_weekend: 10
+    bonus_venue: 15
+  music:
+    # music_component = max_weight * max(lineup) + mean_weight * mean(lineup)
+    # max dominates: one strong headliner beats an even mid lineup.
+    max_weight: 0.7
+    mean_weight: 0.3
+  price:
+    cheap_threshold_eur: 15   # <= this and not free -> bonus_cheap
+    penalty_above_eur: 25     # price above this starts costing penalty_price/eur
+  weekend_days: [4, 5]        # Mon=0 .. Sun=6 -> Fri, Sat (evaluated in Europe/Rome)
+  timezone: Europe/Rome
+  venue_whitelist: []         # exact venue names you always want boosted
+  # Heuristic for is_open_air — RA has no clean flag (spec section 5, our note).
+  open_air_markers:
+    - "open air"
+    - "open-air"
+    - "openair"
+    - "terrazza"
+    - "terrace"
+    - "rooftop"
+    - "giardino"
+    - "outdoor"
+    - "spiaggia"
+    - "beach"
+
+profile:
+  spotify:
+    short_term_weight: 1.0
+    medium_term_weight: 0.8
+    long_term_weight: 0.6
+    followed_only_weight: 0.5
+  lastfm:
+    similar_limit: 20
+    expand_above: 0.5         # only expand artists with weight > this
+    decay: 0.4                # added weight = decay * source_weight * similarity
+  seed:                       # fallback profile from Spotify web-player export
+    base_weight: 0.6          # weight for an artist liked once
+    step_per_extra_like: 0.1  # +this per additional liked track
+    max_weight: 1.0
+
+calendar:
+  name: "Event Radar — Milano"
+  # Colour -> feedback mapping (spec section 8.1). Do not hardcode elsewhere.
+  color_feedback:
+    "10": { dimension: intent, label: love }    # Basil
+    "9":  { dimension: intent, label: going }   # Blueberry
+    "5":  { dimension: intent, label: meh }     # Banana
+    "11": { dimension: intent, label: nope }    # Tomato
+
+telegram:
+  digest_time: "10:00"        # daily auto-digest, Europe/Rome
+  digest_size: 10
+  followup_delay_hours: 24    # post-event survey timing

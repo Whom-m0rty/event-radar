@@ -1,0 +1,17 @@
+[Unit]
+Description=Event Radar Telegram bot (long-polling)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=eventradar
+WorkingDirectory=/opt/event-radar
+EnvironmentFile=/etc/event-radar/env
+# Use the absolute uv path — systemd has a minimal PATH.
+ExecStart=/home/eventradar/.local/bin/uv run event-radar bot
+Restart=always
+RestartSec=10
+
+[Install]
+WantedBy=multi-user.target
