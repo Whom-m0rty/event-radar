@@ -5,10 +5,11 @@ name: pipeline
 # so only the static credentials.json is passed in as a secret.
 
 on:
-  schedule:
-    # 07:00 and 18:00 UTC ≈ 09:00 and 20:00 Europe/Rome (summer time).
-    - cron: "0 7,18 * * *"
+  # Manual only until the deploy is wired (Turso + secrets). Re-enable the cron
+  # once secrets exist, otherwise every scheduled run fails and spams you.
   workflow_dispatch: {}
+  # schedule:
+  #   - cron: "0 7,18 * * *"   # 09:00 & 20:00 Europe/Rome (summer)
 
 concurrency:
   group: pipeline
